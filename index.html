@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Notion 交互地图实测</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.33.0/mapbox-gl.css">
+<style>*{box-sizing:border-box}body{margin:0;background:#edf2f5;color:#122b3d;font:15px system-ui,sans-serif}header,footer{padding:14px 18px}h1{font-size:20px;margin:0 0 8px}nav{display:flex;gap:8px;flex-wrap:wrap}a{color:#006d91}nav a,button{padding:9px;border:1px solid #aec4cd;border-radius:6px;background:white;color:#124b64;cursor:pointer}#map{width:100%;aspect-ratio:1;position:relative;background:#d7e4eb}#status{padding:8px 18px;background:#fff5ce}#places{display:flex;flex-wrap:wrap;gap:8px;padding:10px}#tokenForm{padding:10px;display:none}input{max-width:70%;padding:10px}.pin{border:2px solid white;border-radius:50%;width:26px;height:26px;background:#c33d48;color:white;box-shadow:0 1px 5px #555}.popup{max-width:240px;line-height:1.6}.popup a{display:block;padding:5px 0}.leaflet-popup-content{margin:14px}.maplibregl-popup-content,.mapboxgl-popup-content{color:#122b3d}.badge{font-size:12px;color:#695300}footer{font-size:13px;line-height:1.7}</style></head>
+<body><header><h1>四种引擎 · Notion 地图测试</h1><nav><a href="?engine=leaflet">Leaflet</a><a href="?engine=maplibre">MapLibre</a><a href="?engine=mapbox">Mapbox</a><a href="?engine=deck">deck.gl + MapLibre</a></nav><p class="badge">模拟交互数据 · 不代表今日战况 · 2026-10-29 固定快照</p></header><div id="status" role="status">正在加载</div><form id="tokenForm"><label>Mapbox public token <input id="token" placeholder="pk.…" autocomplete="off"></label><button>运行 Mapbox</button></form><div id="places" aria-label="测试地点"></div><main id="map" aria-label="交互地图"></main><footer><span id="size"></span><br>原型使用城市中心坐标，非事件精确位置。点击地点显示模拟摘要；真实 Notion 链接仅用于导航测试，需登录和页面权限。密集测试点不代表真实事件。<br><a href="https://app.notion.com/p/40823b5de1fd8141a453dea3af937bab" target="_blank" rel="noopener">返回 Notion 测试记录</a><br>底图 © OpenStreetMap contributors；MapLibre/deck 使用 MapLibre demo tiles。</footer>
+<script>
+const engine=new URLSearchParams(location.search).get('engine')||'leaflet';
+const points=[{name:'基辅',position:[30.5234,50.4501]},{name:'哈尔科夫',position:[36.2304,49.9935]},{name:'库皮扬斯克',position:[37.6152,49.7106]},{name:'赫尔松',position:[32.6169,46.6354]}];
+const detail='https://app.notion.com/p/40823b5de1fd8112b626c0d08a9edba7',history='https://app.notion.com/p/3fd23b5de1fd8190b066fb01e70b011c';
+let anchor='';
+function html(p){return `<article class="popup"><strong>${p.name}</strong><p>2026-10-29 · 模拟摘要：标记点击与事件导航测试。</p><p>可信度：测试数据，不作事实评级</p>${anchor?`<a href="${anchor}" target="_blank" rel="noopener">真实日报第三节事件区块</a>`:'<p>第三节区块锚点待实测接入</p>'}<a href="${detail}" target="_blank" rel="noopener">真实哈尔科夫日期详情（导航对照）</a><a href="${history}" target="_blank" rel="noopener">真实哈尔科夫历史档案（导航对照）</a></article>`}
+const status=document.querySelector('#status');function say(t){status.textContent=engine+'：'+t}function load(src){return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=()=>reject(Error('依赖加载失败 '+src));document.head.append(s)})}
+let map,openPoint;
+const geo={type:'FeatureCollection',features:points.map((p,i)=>({type:'Feature',geometry:{type:'Point',coordinates:p.position},properties:{index:i}})).concat(Array.from({length:24},(_,i)=>({type:'Feature',geometry:{type:'Point',coordinates:[37.6152+(i%6)*.002,49.7106+Math.floor(i/6)*.002]},properties:{index:2,test:true}})))};
+function controls(){points.forEach((p,i)=>{const b=document.createElement('button');b.textContent=p.name;b.onclick=()=>openPoint(i);document.querySelector('#places').append(b)})}
+async function run(token){try{
+if(engine==='leaflet'){
+ await load('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js');await load('https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js');
+ for(const file of ['MarkerCluster.css','MarkerCluster.Default.css']){const c=document.createElement('link');c.rel='stylesheet';c.href='https://unpkg.com/leaflet.markercluster@1.5.3/dist/'+file;document.head.append(c)}
+ map=L.map('map').setView([48.8,34],6);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+ const cluster=L.markerClusterGroup();const markers=geo.features.map(f=>L.marker([f.geometry.coordinates[1],f.geometry.coordinates[0]],{icon:L.divIcon({className:'pin',html:'•',iconSize:[26,26]})}).bindPopup(html(points[f.properties.index])));cluster.addLayers(markers);map.addLayer(cluster);openPoint=i=>cluster.zoomToShowLayer(markers[i],()=>markers[i].openPopup());say('真实引擎已初始化；等待瓦片');map.on('tileerror',()=>say('部分瓦片失败'));map.whenReady(()=>say('地图交互已就绪（底图需网络）'));
+}else{
+ const mb=engine==='mapbox';await load(mb?'https://api.mapbox.com/mapbox-gl-js/v3.33.0/mapbox-gl.js':'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js');
+ if(mb&&!token){document.querySelector('#tokenForm').style.display='block';say('引擎脚本已加载；缺少公开 token，地图未初始化');return}
+ const lib=mb?mapboxgl:maplibregl;if(mb)lib.accessToken=token;
+ map=new lib.Map({container:'map',style:mb?'mapbox://styles/mapbox/streets-v12':'https://demotiles.maplibre.org/style.json',center:[34,48.8],zoom:5.5});map.addControl(new lib.NavigationControl());
+ openPoint=i=>{map.flyTo({center:points[i].position,zoom:8});new lib.Popup().setLngLat(points[i].position).setHTML(html(points[i])).addTo(map)};
+ map.on('error',e=>say('地图资源错误：'+e.error.message));
+ map.on('load',async()=>{try{
+ if(engine==='deck'){
+ await load('https://unpkg.com/deck.gl@9.1.14/dist.min.js');
+ const overlay=new deck.MapboxOverlay({interleaved:false,layers:[new deck.ScatterplotLayer({id:'events',data:geo.features,pickable:true,getPosition:d=>d.geometry.coordinates,getRadius:1500,radiusMinPixels:10,getFillColor:[195,61,72,210],onClick:info=>{if(info.object)openPoint(info.object.properties.index)}})]});map.addControl(overlay);say('MapLibre + deck.gl ScatterplotLayer 已加载；deck点位未实现聚合');
+ }else{
+ map.addSource('events',{type:'geojson',data:geo,cluster:true,clusterRadius:45,clusterMaxZoom:12});map.addLayer({id:'clusters',type:'circle',source:'events',filter:['has','point_count'],paint:{'circle-color':'#126a87','circle-radius':20}});map.addLayer({id:'counts',type:'symbol',source:'events',filter:['has','point_count'],layout:{'text-field':'{point_count_abbreviated}','text-size':13},paint:{'text-color':'white'}});map.addLayer({id:'points',type:'circle',source:'events',filter:['!', ['has','point_count']],paint:{'circle-color':'#c33d48','circle-radius':11,'circle-stroke-width':2,'circle-stroke-color':'white'}});map.on('click','points',e=>openPoint(e.features[0].properties.index));map.on('click','clusters',async e=>{const f=e.features[0];let z;if(mb)z=await new Promise((r,j)=>map.getSource('events').getClusterExpansionZoom(f.properties.cluster_id,(err,v)=>err?j(err):r(v)));else z=await map.getSource('events').getClusterExpansionZoom(f.properties.cluster_id);map.easeTo({center:f.geometry.coordinates,zoom:z})});say('真实引擎、底图及 GeoJSON 聚合已加载');
+ }
+ }catch(e){say(e.message)}});
+}controls();new ResizeObserver(()=>{const r=document.querySelector('#map').getBoundingClientRect();document.querySelector('#size').textContent=`地图实测尺寸 ${r.width.toFixed(0)} × ${r.height.toFixed(0)} CSS px；比例 ${(r.width/r.height).toFixed(3)}`;if(map)engine==='leaflet'?map.invalidateSize():map.resize()}).observe(document.querySelector('#map'));
+}catch(e){say(e.message)}}
+document.querySelector('#tokenForm').onsubmit=e=>{e.preventDefault();run(document.querySelector('#token').value.trim())};run();
+</script></body></html>
+
