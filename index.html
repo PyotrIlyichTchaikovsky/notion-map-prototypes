@@ -11,7 +11,7 @@ const engine=new URLSearchParams(location.search).get('engine')||'leaflet';
 const points=[{name:'基辅',position:[30.5234,50.4501]},{name:'哈尔科夫',position:[36.2304,49.9935]},{name:'库皮扬斯克',position:[37.6152,49.7106]},{name:'赫尔松',position:[32.6169,46.6354]}];
 const detail=sessionStorage.getItem('detail')||'#',history=sessionStorage.getItem('history')||'#';
 let anchor=sessionStorage.getItem('anchor')||'';
-function html(p){return `<article class="popup"><strong>${p.name}</strong><p>2026-10-29 · 模拟摘要：标记点击与事件导航测试。</p><p>可信度：测试数据，不作事实评级</p>${anchor?`<a href="${anchor}" target="_blank" rel="noopener">真实日报第三节事件区块</a>`:'<p>第三节区块锚点待实测接入</p>'}<a href="${detail}" target="_blank" rel="noopener">真实哈尔科夫日期详情（导航对照）</a><a href="${history}" target="_blank" rel="noopener">真实哈尔科夫历史档案（导航对照）</a></article>`}
+function html(p){return `<article class="popup"><strong>${p.name}</strong><p>2026-10-29 · 模拟摘要：标记点击与事件导航测试。</p><p>可信度：测试数据，不作事实评级</p>${anchor?`<a href="${anchor}" target="_top" rel="noopener">真实日报第三节事件区块</a>`:'<p>第三节区块锚点待实测接入</p>'}<a href="${detail}" target="_top" rel="noopener">真实哈尔科夫日期详情（导航对照）</a><a href="${history}" target="_top" rel="noopener">真实哈尔科夫历史档案（导航对照）</a></article>`}
 const status=document.querySelector('#status');function say(t){status.textContent=engine+'：'+t}function load(src){return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=()=>reject(Error('依赖加载失败 '+src));document.head.append(s)})}
 let map,openPoint;
 const geo={type:'FeatureCollection',features:points.map((p,i)=>({type:'Feature',geometry:{type:'Point',coordinates:p.position},properties:{index:i}})).concat(Array.from({length:24},(_,i)=>({type:'Feature',geometry:{type:'Point',coordinates:[37.6152+(i%6)*.002,49.7106+Math.floor(i/6)*.002]},properties:{index:2,test:true}})))};
@@ -41,6 +41,7 @@ if(engine==='leaflet'){
 }catch(e){say(e.message)}}
 document.querySelector('#linksForm').onsubmit=e=>{e.preventDefault();for(const k of ['anchor','detail','history']){const v=document.querySelector('#'+k+'Input').value;if(v&&new URL(v).hostname.endsWith('notion.com'))sessionStorage.setItem(k,v)}location.reload()};document.querySelector('#tokenForm').onsubmit=e=>{e.preventDefault();run(document.querySelector('#token').value.trim())};run();
 </script></body></html>
+
 
 
 
