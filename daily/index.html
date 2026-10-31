@@ -3,60 +3,90 @@
 *{box-sizing:border-box}html,body{height:100%;margin:0;font:14px system-ui,sans-serif;color:#153047;background:#edf3f5}#map{position:absolute;inset:0;background:#edf3f5}.toolbar{position:absolute;top:10px;right:10px;z-index:1100;display:flex;gap:5px}.toolbar button,.toolbar a{padding:8px;background:white;border:1px solid #9fb9c3;border-radius:5px;color:#153047;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}.toolbar button[aria-pressed="true"]{background:#153047;color:white;border-color:#153047}#stamp{position:absolute;bottom:4px;left:6px;z-index:1000;background:#fffffff0;padding:4px 7px;border-radius:3px;font-size:11px;max-width:65%;pointer-events:none}#message{position:absolute;inset:25% 8% auto;z-index:1200;padding:16px;background:white;border:1px solid #b7cbd3;border-radius:8px;line-height:1.7;display:none}.event-marker{width:max-content!important;height:auto!important;white-space:nowrap}.event-label{display:flex;gap:5px;align-items:center;background:#fffffff2;box-shadow:0 1px 5px #18344755;border-radius:5px;border:1px solid #c3d4da;padding:5px 7px;color:#152f40}.event-label b{background:#b73540;color:white;border-radius:50%;min-width:22px;height:22px;line-height:22px;text-align:center}.event-label span{font-size:12px;max-width:var(--label-max,200px);overflow:hidden;text-overflow:ellipsis}.label-left .event-label{flex-direction:row-reverse}.event-popup{line-height:1.6;max-height:min(260px,65vh);overflow-y:auto}.event-popup h3{margin:0 0 5px;font-size:15px}.event-popup p{margin:5px 0}.event-popup a{display:block;padding:7px 0;color:#006882;font-weight:600}.leaflet-popup-content{margin:12px;max-width:260px}#eventList{display:none;position:absolute;inset:50px 10px 35px auto;max-width:340px;width:calc(100% - 20px);overflow:auto;z-index:1150;background:#fffffff5;padding:10px;border:1px solid #a8bec7;border-radius:5px}#eventList button,#eventList a{display:block;width:100%;padding:9px;margin:4px 0;text-align:left;border:1px solid #d4e0e5;background:white;border-radius:4px;cursor:pointer;text-decoration:none;color:inherit}button:focus-visible,a:focus-visible{outline:3px solid #1e95ba}
 </style></head><body><main id="map" aria-label="当日事件地图"></main><div class="toolbar"><button id="fit">还原全图</button><button id="list">事件列表</button><button id="fullscreen" type="button" aria-pressed="false" title="在当前嵌入中切换全屏">全屏地图</button><a id="openExternal" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" title="如果Notion不支持全屏，在独立标签页打开地图">单独打开地图</a></div><div id="eventList" aria-label="当日事件列表"></div><div id="stamp" role="status">正在读取地图数据</div><div id="message" role="alert"></div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script><script>
 const $=s=>document.querySelector(s),params=new URLSearchParams(location.search);let map,group,allMarkers=[];
-function base64(s){return Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0))}
-
-/*
- * Map data transport:
- *   #data=uri.<encodeURIComponent(JSON.stringify(map))>    short, plain inline data
- *   #data=gz.<base64url(gzip(JSON.stringify(map)))>       short, compressed inline data
- *   ?snapshot=YYYY-MM-DD.json                            public plain JSON file
- *   ?snapshot=YYYY-MM-DD-hash.json#k=<base64url-key>      legacy AES-256-GCM data
- * The URL fragment is handled locally by the browser; inline data is PUBLIC to
- * anyone holding the URL. No secrets or unrelated private Notion content.
+/**
+ * Two independent daily-map transports; inline always wins when both are present.
+ *
+ * Plan 1: /daily/#data=gz.<base64url(gzip(UTF8(JSON.stringify(compactV2))))>
+ * Plan 3: /daily/?snapshot=YYYY-MM-DD.json  (public UTF-8 compactV2 JSON)
+ *
+ * Compact v2 schema:
+ * {
+ *   "v": 2, "d": "YYYY-MM-DD", "p": "<Notion daily page ID>",
+ *   "e": [
+ *     [place,label,summary,confidence,accuracy,lat,lon,
+ *      notionEventBlockID,notionHistoryPageID]
+ *   ]
+ * }
+ * Notion ID fields are bare 32-digit hexadecimal IDs (dashes accepted).
+ * Both URL formats are public. This renderer deliberately DOES NOT support
+ * the obsolete encrypted 2026-10-29 snapshot.
  */
-function validateMapData(data){
- if(!data||data.version!==1||typeof data.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(data.date)||!Array.isArray(data.events))throw Error('地图数据版本或日期无效');
- if(data.events.length>1000)throw Error('事件数量超过安全上限');
- for(const e of data.events){
-   if(!e||typeof e.place!=='string'||typeof e.label!=='string'||typeof e.summary!=='string'||typeof e.confidence!=='string'||typeof e.accuracy!=='string')throw Error('事件字段不完整');
-   for(const k of ['eventUrl','historyUrl']){
-     if(typeof e[k]!=='string')throw Error('Notion链接缺失');
-     const u=new URL(e[k]);if(u.protocol!=='https:'||!['app.notion.com','www.notion.so','notion.so'].includes(u.hostname))throw Error('Notion链接域名不受支持');
-   }
-   if(e.lat!==null&&(!Number.isFinite(e.lat)||Math.abs(e.lat)>85))throw Error('事件纬度无效');
-   if(e.lon!==null&&(!Number.isFinite(e.lon)||Math.abs(e.lon)>180))throw Error('事件经度无效');
- }
- return data;
+const MAP_BASE='https://app.notion.com/p/';
+function decode64url(s){
+ if(typeof s!=='string'||!s||!/^[a-zA-Z0-9_-]+$/.test(s))throw Error('地图数据不是有效的Base64URL');
+ return Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),c=>c.charCodeAt(0));
 }
-async function decodeInline(input){
- let raw=input;
- if(input.startsWith('gz.')){
-   if(typeof DecompressionStream==='undefined')throw Error('浏览器不支持gzip内联数据');
-   const stream=new Blob([base64(input.slice(3))]).stream().pipeThrough(new DecompressionStream('gzip'));
-   raw=await new Response(stream).text();
- }else if(input.startsWith('uri.'))raw=input.slice(4);
- else if(input.startsWith('b64.'))raw=new TextDecoder().decode(base64(input.slice(4)));
- if(raw.length>1024*1024)throw Error('内联地图数据超过安全上限');
- return validateMapData(JSON.parse(raw));
+function notionId(s){
+ if(typeof s!=='string')throw Error('Notion ID类型错误');
+ const id=s.replace(/-/g,'');
+ if(!/^[0-9a-fA-F]{32}$/.test(id))throw Error('Notion事件或页面ID无效');
+ return id.toLowerCase();
+}
+function normalizeData(data){
+ if(!data||data.v!==2||typeof data.d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(data.d)||!Array.isArray(data.e)||data.e.length>250)throw Error('地图数据协议版本、日期或事件列表无效');
+ const page=notionId(data.p);
+ const events=data.e.map((r,i)=>{
+   if(!Array.isArray(r)||r.length!==9)throw Error('第'+(i+1)+'条地图事件字段数不正确');
+   const [place,label,summary,confidence,accuracy,lat,lon,blockId,historyId]=r;
+   for(const value of [place,label,summary,confidence,accuracy]){
+     if(typeof value!=='string'||!value.trim()||value.length>3000)throw Error('第'+(i+1)+'条地图事件文本无效');
+   }
+   if((lat===null)!==(lon===null))throw Error('第'+(i+1)+'条事件坐标必须同时为空');
+   if(lat!==null&&(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>85||Math.abs(lon)>180))throw Error('第'+(i+1)+'条事件坐标无效');
+   return {place,label,summary,confidence,accuracy,lat,lon,
+     eventUrl:MAP_BASE+page+'#'+notionId(blockId),
+     historyUrl:MAP_BASE+notionId(historyId)};
+ });
+ return {date:data.d,events};
+}
+async function gunzipTextBounded(compressed){
+ if(typeof DecompressionStream==='undefined')throw Error('浏览器不支持gzip解压，请打开现代浏览器');
+ const stream=new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+ const reader=stream.getReader();
+ let size=0;
+ const chunks=[];
+ try{
+   while(true){
+     const result=await reader.read();
+     if(result.done)break;
+     size+=result.value.byteLength;
+     if(size>256*1024)throw Error('地图解压后超过256KiB安全上限');
+     chunks.push(result.value);
+   }
+ }finally{reader.releaseLock()}
+ const buffer=new Uint8Array(size);let offset=0;
+ for(const chunk of chunks){buffer.set(chunk,offset);offset+=chunk.length}
+ return new TextDecoder('utf-8',{fatal:true}).decode(buffer);
 }
 async function loadMapData(){
  const fragment=new URLSearchParams(location.hash.slice(1));
- const inline=fragment.get('data');
- if(inline!==null)return decodeInline(inline);
- const filename=params.get('snapshot'),secret=fragment.get('k');
- if(!filename)throw Error('缺少地图快照文件名或内联数据');
- if(!/^[A-Za-z0-9._-]+\.json$/.test(filename))throw Error('快照文件名无效');
- const response=await fetch('snapshots/'+filename,{referrerPolicy:'no-referrer'});
- if(!response.ok)throw Error('地图快照尚未发布：HTTP '+response.status);
- const payload=await response.json();
- if(!secret){
-   if(payload&&Array.isArray(payload.events))return validateMapData(payload);
-   throw Error('这是加密快照，请从有权限的Notion日报打开地图');
+ // Explicit precedence: a present inline parameter wins, even if malformed.
+ if(fragment.has('data')){
+   const inline=fragment.get('data');
+   if(!inline||!inline.startsWith('gz.'))throw Error('内联地图仅接受 #data=gz.<Base64URL> 格式');
+   if(inline.length>10000)throw Error('内联地图URL参数过长');
+   return normalizeData(JSON.parse(await gunzipTextBounded(decode64url(inline.slice(3)))));
  }
- if(payload.version!==1||payload.algorithm!=='AES-256-GCM'||typeof payload.data!=='string'||typeof payload.iv!=='string')throw Error('加密快照格式无效');
- const key=await crypto.subtle.importKey('raw',base64(secret),{name:'AES-GCM'},false,['decrypt']);
- let bytes;try{bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv:base64(payload.iv)},key,base64(payload.data))}catch{throw Error('地图数据校验失败：请从原Notion日报重新打开。')}
- return validateMapData(JSON.parse(new TextDecoder().decode(bytes)));
+ const filename=params.get('snapshot');
+ if(!filename)throw Error('缺少 #data=压缩数据或 ?snapshot=JSON文件名');
+ if(!/^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(filename)||filename.includes('..'))throw Error('快照文件名无效');
+ const response=await fetch('snapshots/'+filename,{referrerPolicy:'no-referrer',cache:'no-cache'});
+ if(!response.ok)throw Error('地图JSON尚未发布：HTTP '+response.status);
+ const contentLength=Number(response.headers.get('content-length')||0);
+ if(contentLength>256*1024)throw Error('地图JSON文件过大');
+ const raw=await response.text();
+ if(raw.length>256*1024)throw Error('地图JSON文件过大');
+ return normalizeData(JSON.parse(raw));
 }
 
 function note(s){$('#message').style.display='block';$('#message').textContent=s;$('#stamp').textContent=s}
@@ -67,7 +97,7 @@ async function toggleFullscreen(){try{if(document.fullscreenElement)await docume
 function syncFullscreenButton(){const on=!!document.fullscreenElement,b=$('#fullscreen');b.textContent=on?'退出全屏':'全屏地图';b.setAttribute('aria-pressed',String(on));map&&setTimeout(()=>map.invalidateSize(),0)}
 function relayoutLabels(){const w=map.getSize().x;$('#map').style.setProperty('--label-max',Math.max(90,Math.min(200,w*.35))+'px');for(const marker of allMarkers){const el=marker.getElement();if(el){const east=map.latLngToContainerPoint(marker.getLatLng()).x>w/2;el.classList.toggle('label-left',east);el.style.marginLeft=(east?20-el.offsetWidth:-20)+'px'}}}
 async function start(){try{map=L.map('map',{zoomControl:false,scrollWheelZoom:true}).setView([48.8,34.1],5);L.control.zoom({position:'topleft'}).addTo(map);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,referrerPolicy:'strict-origin-when-cross-origin',attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'}).addTo(map);new ResizeObserver(()=>map.invalidateSize()).observe($('#map'));document.addEventListener('fullscreenchange',syncFullscreenButton);$('#fit').onclick=fit;$('#list').onclick=()=>$('#eventList').style.display=$('#eventList').style.display==='block'?'none':'block';$('#fullscreen').onclick=toggleFullscreen;$('#openExternal').href=location.href;
-if(params.has('blank')){note('日报地图模板｜等待当日数据；此框用于保留正方形布局。');return}
+if(params.has('blank')){note('日报地图模板｜等待当日数据。');return}
 const data=await loadMapData();document.title=data.date+'｜俄乌战报事件地图';group=L.markerClusterGroup({maxClusterRadius:42,spiderfyOnMaxZoom:true});map.addLayer(group);map.on('moveend zoomend resize',relayoutLabels);group.on('animationend',relayoutLabels);let unmapped=0;
 for(const [i,e] of data.events.entries()){const button=document.createElement('button');button.textContent=(i+1)+'. '+e.place+'｜'+e.label;$('#eventList').append(button);if(!Number.isFinite(e.lat)||!Number.isFinite(e.lon)){unmapped++;button.replaceWith(link(e.eventUrl,button.textContent+'（地点待核准）'));continue}const label=document.createElement('div');label.className='event-label';const n=document.createElement('b');n.textContent=i+1;const name=document.createElement('span');name.textContent=e.place+' · '+e.label;label.append(n,name);const marker=L.marker([e.lat,e.lon],{title:e.place,icon:L.divIcon({className:'event-marker',html:label.outerHTML,iconAnchor:[20,16]})}).bindPopup(popup(e,data.date),{maxWidth:280,autoPan:true});group.addLayer(marker);allMarkers.push(marker);button.onclick=()=>{group.zoomToShowLayer(marker,()=>marker.openPopup());$('#eventList').style.display='none'}}fit();relayoutLabels();$('#stamp').textContent=data.date+'｜'+allMarkers.length+'处地图标记'+(unmapped?'，'+unmapped+'项地点待定位':'')+'｜地区代表点，非精确坐标';
 }catch(e){note('地图未就绪：'+e.message)}}start();
