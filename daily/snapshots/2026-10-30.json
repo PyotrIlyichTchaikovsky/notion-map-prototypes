@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "date": "2026-10-30",
+  "events": [
+    {
+      "place": "奥列什基",
+      "label": "人道转运",
+      "summary": "双方官员称路线已排雷，开始向乌方控制区转运平民。",
+      "confidence": "双方官员声明，经ISW转述；执行范围未独立全面核实。",
+      "accuracy": "城市代表点，非撤离路线或平民位置。",
+      "lat": 46.62,
+      "lon": 32.72,
+      "eventUrl": "https://app.notion.com/p/40a23b5de1fd81859227ddc8fec431d3#f1d5a8a84f9b4259b1b6499ddb4a202d",
+      "historyUrl": "https://app.notion.com/p/40823b5de1fd816d8d8df82e84510eed"
+    },
+    {
+      "place": "奥里希夫东部方向",
+      "label": "俄军推进评估",
+      "summary": "ISW据军事观察员报告评估俄军在奥里希夫东侧推进；渗透不等于连续控制。",
+      "confidence": "ISW评估，主要依据军事观察员报告，非本次独立地理定位。",
+      "accuracy": "涉及多处村庄和方向，未核准统一代表坐标；仅列正文。",
+      "lat": null,
+      "lon": null,
+      "eventUrl": "https://app.notion.com/p/40a23b5de1fd81859227ddc8fec431d3#d49a9dd2c3c7492d8003a91c1329ee7a",
+      "historyUrl": "https://app.notion.com/p/40a23b5de1fd815e94f9cd92a6ec09c8"
+    },
+    {
+      "place": "新古比雪夫斯克",
+      "label": "炼油厂遭袭",
+      "summary": "ISW引用地理定位影像记录炼油厂附近烟柱；完整损毁程度未确认。",
+      "confidence": "ISW所引地理定位影像＋乌方企业声明；损失规模待核实。",
+      "accuracy": "城市代表点，非炼油设备或打击精确位置。",
+      "lat": 53.1,
+      "lon": 49.93,
+      "eventUrl": "https://app.notion.com/p/40a23b5de1fd81859227ddc8fec431d3#65a4ce136f0f42c293dda6dc723b0925",
+      "historyUrl": "https://app.notion.com/p/40a23b5de1fd81a6931ddc38b1cb395d"
+    }
+  ]
+}
