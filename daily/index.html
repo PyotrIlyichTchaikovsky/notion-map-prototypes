@@ -90,7 +90,7 @@ async function loadMapData(){
 }
 
 function note(s){$('#message').style.display='block';$('#message').textContent=s;$('#stamp').textContent=s}
-function link(url,label){const a=document.createElement('a');const u=new URL(url);if(!['app.notion.com','www.notion.so','notion.so'].includes(u.hostname)||u.protocol!=='https:')throw Error('事件链接域名不受支持');a.href=u.href;a.target='_top';a.rel='noopener noreferrer';a.textContent=label;return a}
+function link(url,label){const a=document.createElement('a');const u=new URL(url);if(!['app.notion.com','www.notion.so','notion.so'].includes(u.hostname)||u.protocol!=='https:')throw Error('事件链接域名不受支持');a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent=label;return a}
 function popup(e,date){const box=document.createElement('article');box.className='event-popup';const title=document.createElement('h3');title.textContent=e.place;box.append(title);for(const t of [date+'｜'+e.label,e.summary,'证据状态：'+e.confidence,'位置说明：'+e.accuracy]){const p=document.createElement('p');p.textContent=t;box.append(p)}box.append(link(e.eventUrl,'查看第三节事件详情'),link(e.historyUrl,'查看本地区全部历史事件'));return box}
 function fit(){if(allMarkers.length)map.fitBounds(L.featureGroup(allMarkers).getBounds().pad(.18),{maxZoom:8})}
 async function toggleFullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen({navigationUI:'hide'})}catch{note('当前嵌入容器不允许原生全屏；可点击「单独打开地图」在新标签页查看。')}}
